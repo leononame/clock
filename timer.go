@@ -77,6 +77,7 @@ func (r *realTimer) Chan() <-chan time.Time {
 type fakeTimer struct {
 	mu      sync.RWMutex
 	ch      chan time.Time
+	fn      func()
 	due     time.Time
 	clock   *Mock
 	changed chan time.Time
@@ -172,7 +173,11 @@ func (f *fakeTimer) tick() {
 		f.mu.RUnlock()
 
 		f.mu.Lock()
-		f.ch <- f.due
+		if f.ch == nil {
+			f.fn()
+		} else {
+			f.ch <- f.due
+		}
 		f.stopped = true
 		f.mu.Unlock()
 	}

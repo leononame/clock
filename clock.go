@@ -12,6 +12,9 @@ import (
 type Clock interface {
 	// After waits for the duration to elapse and then sends the current time on the returned channel.
 	After(d time.Duration) <-chan time.Time
+	// AfterFunc waits for the duration to elapse and then executes a function.
+	// A Timer is returned that can be stopped.
+	AfterFunc(d time.Duration, fn func()) Timer
 	// Now returns the current local time.
 	Now() time.Time
 	// Since returns the time elapsed since t.
@@ -48,6 +51,10 @@ type clock struct{}
 
 // After waits for the duration to elapse and then sends the current time on the returned channel.
 func (c *clock) After(d time.Duration) <-chan time.Time { return time.After(d) }
+
+// AfterFunc waits for the duration to elapse and then executes a function.
+// A Timer is returned that can be stopped.
+func (c *clock) AfterFunc(d time.Duration, fn func()) Timer { return &realTimer{time.AfterFunc(d, fn)} }
 
 // Now returns the current local time.
 func (c *clock) Now() time.Time { return time.Now() }
@@ -124,6 +131,16 @@ func (m *Mock) After(d time.Duration) <-chan time.Time {
 	return t.Chan()
 }
 
+// AfterFunc waits for the duration to elapse and then executes a function.
+// A Timer is returned that can be stopped.
+func (m *Mock) AfterFunc(d time.Duration, fn func()) Timer {
+	t := m.fakeTimer(d)
+	t.fn = fn
+	go t.tick()
+	sched()
+	return t
+}
+
 // Since returns the time elapsed since t in comparison to the internal time.
 func (m *Mock) Since(t time.Time) time.Duration { return m.Now().Sub(t) }
 
@@ -156,16 +173,25 @@ func (m *Mock) NewTicker(d time.Duration) Ticker {
 // NewTimer creates a new Timer that will send
 // the current time on its channel after at least duration d.
 func (m *Mock) NewTimer(d time.Duration) Timer {
-	t := fakeTimer{}
+	t := m.fakeTimer(d)
 	t.ch = make(chan time.Time)
+	go t.tick()
+	sched()
+	return t
+}
+
+func (m *Mock) fakeTimer(d time.Duration) *fakeTimer {
+	t := fakeTimer{}
+	// Set this to nil expressively to show that this timer will not do anything
+	t.ch = nil
+	t.fn = nil
 	t.due = m.Now().Add(d)
 	t.clock = m
 	t.changed = make(chan time.Time)
+
 	m.mu.Lock()
 	m.timers = append(m.timers, &t)
 	m.mu.Unlock()
-	go t.tick()
-	sched()
 	return &t
 }
 

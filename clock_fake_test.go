@@ -56,6 +56,21 @@ func TestMock_After(t *testing.T) {
 	assert.NotZero(t, atomic.LoadInt32(&received))
 }
 
+func TestMock_AfterFunc(t *testing.T) {
+	received := int32(0)
+	clock := NewMock()
+	fn := func() {
+		atomic.AddInt32(&received, 1)
+	}
+	clock.AfterFunc(time.Minute, fn)
+
+	clock.Forward(time.Second * 59)
+	assert.Zero(t, atomic.LoadInt32(&received))
+	clock.Forward(time.Second)
+	assert.NotZero(t, atomic.LoadInt32(&received))
+
+}
+
 func TestMock_Sleep(t *testing.T) {
 	received := int32(0)
 	clock := NewMock()

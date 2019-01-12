@@ -81,6 +81,13 @@ func TestClock_After(t *testing.T) {
 	assert.Equal(t, int32(1), atomic.LoadInt32(&count))
 }
 
+func TestClock_AfterFunc(t *testing.T) {
+	var count int32
+	New().AfterFunc(time.Millisecond*25, func() { atomic.AddInt32(&count, 1) })
+	time.Sleep(40 * time.Millisecond)
+	assert.Equal(t, int32(1), count)
+}
+
 func TestClock_NewTimer(t *testing.T) {
 	var count int32
 	go incUponReceive(New().NewTimer(25*time.Millisecond).Chan(), &count)
