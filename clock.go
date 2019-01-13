@@ -127,6 +127,22 @@ func (m *Mock) Set(t time.Time) {
 	sched()
 }
 
+// RunUntilDone sets the internal time to the point in time where the latest timer will be fired.
+// This means, all After() and AfterFunc() calls will have fired.
+// Since tickers potentially run forever, they aren't included.
+func (m *Mock) RunUntilDone() {
+	var last time.Time
+	m.mu.RLock()
+	for _, t := range m.timers {
+		timer, ok := t.(*fakeTimer)
+		if ok && timer.NextExecution().After(last) {
+			last = timer.NextExecution()
+		}
+	}
+	m.mu.RUnlock()
+	m.Set(last)
+}
+
 // tick sends an event to all tickers and timers informing them that time has changed.
 func (m *Mock) tick(t time.Time) {
 	for m.tickNext(t) {

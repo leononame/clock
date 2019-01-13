@@ -25,6 +25,18 @@ func TestMock_Set(t *testing.T) {
 	assert.Equal(t, c.Now(), target)
 }
 
+func TestMock_RunUntilDone(t *testing.T) {
+	c := NewMock()
+	var fired int32
+	go incUponReceive(c.NewTicker(time.Second).Chan(), &fired)
+	go incUponReceive(c.NewTimer(time.Minute).Chan(), &fired)
+	before := c.Now()
+	c.RunUntilDone()
+	time.Sleep(time.Millisecond * 100)
+	assert.Equal(t, time.Minute, c.Since(before))
+	assert.Equal(t, int32(61), fired)
+}
+
 func TestMock_Since(t *testing.T) {
 	c := NewMock()
 	target := time.Unix(1000, 0)
