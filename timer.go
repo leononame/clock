@@ -68,7 +68,7 @@ type realTimer struct {
 	*time.Timer
 }
 
-// Chan returns the readonly channel of the timer.
+// Chan returns the readonly channel of the Timer.
 func (r *realTimer) Chan() <-chan time.Time {
 	return r.C
 }
@@ -80,11 +80,10 @@ type fakeTimer struct {
 	fn      func()
 	due     time.Time
 	clock   *Mock
-	changed chan time.Time
 	stopped bool
 }
 
-// Chan returns the readonly channel of the timer.
+// Chan returns the readonly channel of the Timer.
 func (f *fakeTimer) Chan() <-chan time.Time {
 	return f.ch
 }
@@ -113,8 +112,10 @@ func (f *fakeTimer) Chan() <-chan time.Time {
 // If the caller needs to know whether f is completed, it must coordinate
 // with f explicitly.
 func (f *fakeTimer) Stop() bool {
+	f.clock.removeTimer(f)
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
 	if f.stopped {
 		return false
 	}
@@ -148,37 +149,44 @@ func (f *fakeTimer) Stop() bool {
 // Reset should always be invoked on stopped or expired channels, as described above.
 // The return value exists to preserve compatibility with existing programs.
 func (f *fakeTimer) Reset(d time.Duration) bool {
+	now := f.clock.Now()
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.due = f.clock.Now().Add(d)
+	f.due = now.Add(d)
 
 	if f.stopped {
 		f.stopped = false
+		f.clock.addTimer(f)
+		f.mu.Unlock()
 		return false
 	}
+	f.mu.Unlock()
+
 	return true
 }
 
-// tick is a function checking the timer. It should be started as a goroutine. Every time
-// the fakeTimer receives a new time bump, it will check whether it should tick.
-func (f *fakeTimer) tick() {
-	for {
-		t := <-f.changed
-
-		f.mu.RLock()
-		if f.stopped || f.due.After(t) {
-			f.mu.RUnlock()
-			continue
-		}
+// Execute executes the Timer object
+func (f *fakeTimer) Execute(t time.Time) {
+	f.mu.RLock()
+	if f.stopped {
 		f.mu.RUnlock()
-
-		f.mu.Lock()
-		if f.ch == nil {
-			f.fn()
-		} else {
-			f.ch <- f.due
-		}
-		f.stopped = true
-		f.mu.Unlock()
+		return
 	}
+	f.mu.RUnlock()
+
+	f.mu.Lock()
+	if f.ch == nil {
+		f.fn()
+	} else {
+		f.ch <- f.due
+	}
+	f.stopped = true
+	f.mu.Unlock()
+	f.clock.removeTimer(f)
+}
+
+// NextExecution returns the next execution time
+func (f *fakeTimer) NextExecution() time.Time {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.due
 }

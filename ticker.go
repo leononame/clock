@@ -1,6 +1,7 @@
 package clock
 
 import (
+	"sync"
 	"time"
 )
 
@@ -24,11 +25,12 @@ func (r *realTicker) Chan() <-chan time.Time {
 
 // fakeTicker is a fake implementation of Ticker based on the time mocking in Mock.
 type fakeTicker struct {
+	mu      sync.RWMutex
 	ch      chan time.Time
-	stop    chan struct{}
-	changed chan time.Time
 	clock   *Mock
 	d       time.Duration
+	next    time.Time
+	stopped bool
 }
 
 // Chan returns the readonly channel of the ticker.
@@ -38,34 +40,37 @@ func (f *fakeTicker) Chan() <-chan time.Time {
 
 // Stop stops the ticker. No more events will be sent through the channel
 func (f *fakeTicker) Stop() {
-	f.clock.mu.Lock()
-	f.stop <- struct{}{}
-	for i, t := range f.clock.tickers {
-		if t == f {
-			f.clock.tickers = append(f.clock.tickers[:i], f.clock.tickers[i+1:]...)
-		}
-	}
-	f.clock.mu.Unlock()
+	f.mu.Lock()
+	f.stopped = true
+	f.mu.Unlock()
+	f.clock.removeTimer(f)
 }
 
-// tick is a function checking the ticker. It should be started as a goroutine. Every time
-// the fakeTicker receives a new time bump, it will check whether and how often it should tick.
-func (f *fakeTicker) tick() {
-	next := f.clock.Now().Add(f.d)
-	for {
-		select {
-		case <-f.changed:
-			n := f.clock.Now()
-			for {
-				if !next.After(n) {
-					f.ch <- next
-					next = next.Add(f.d)
-				} else {
-					break
-				}
-			}
-		case <-f.stop:
-			return
-		}
+// Execute executes the Ticker
+func (f *fakeTicker) Execute(t time.Time) {
+	f.mu.RLock()
+	next := f.next
+	stopped := f.stopped
+	f.mu.RUnlock()
+
+	if stopped {
+		return
 	}
+
+	f.mu.Lock()
+	f.next = next.Add(f.d)
+	f.mu.Unlock()
+
+	select {
+	case f.ch <- next:
+	default:
+	}
+	sched()
+}
+
+// NextExecution returns the next execution time
+func (f *fakeTicker) NextExecution() time.Time {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.next
 }

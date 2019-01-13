@@ -21,6 +21,7 @@ func TestFakeTicker(t *testing.T) {
 		count    int32
 	}{
 		{time.Hour, 1},
+		{time.Hour * 2, 2},
 		{time.Hour * 5, 5},
 		{time.Hour * 24, 24},
 		{time.Minute * 59, 0},
@@ -70,7 +71,7 @@ func TestFakeTicker_Stop(t *testing.T) {
 func TestFakeTicker_Unread(t *testing.T) {
 	clock := NewMock()
 	ticker := clock.NewTicker(time.Microsecond)
-	clock.Forward(100 * time.Hour)
+	clock.Forward(10 * time.Microsecond)
 	ticker.Stop()
 }
 

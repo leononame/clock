@@ -4,9 +4,19 @@ package clock
 
 import (
 	"runtime"
+	"sort"
 	"sync"
 	"time"
 )
+
+// Executer is an interface that allows the fake clock implementation to abstract Timer and Ticker. This way,
+// both types can be united in the same slice and thus be sorted by their next execution
+type Executer interface {
+	// NextExecution returns the next execution time
+	NextExecution() time.Time
+	// Execute executes the Executer object
+	Execute(time.Time)
+}
 
 // Clock provides an abstraction for often-used time functions
 type Clock interface {
@@ -82,8 +92,18 @@ type Mock struct {
 	mu      sync.RWMutex
 	now     time.Time
 	changed chan time.Time
-	timers  []*fakeTimer
-	tickers []*fakeTicker
+	timers  []Executer
+}
+
+// Len returns the number of internal Timers or Tickers that are being tracked.
+func (m *Mock) Len() int { return len(m.timers) }
+
+// Swap swaps the elements at i and j in the internal tracker for Timers and Tickers
+func (m *Mock) Swap(i, j int) { m.timers[i], m.timers[j] = m.timers[j], m.timers[i] }
+
+// Less indicates whether Executer at position i should be executed before Executer at position j
+func (m *Mock) Less(i, j int) bool {
+	return m.timers[i].NextExecution().Before(m.timers[j].NextExecution())
 }
 
 // Forward moves the internal time forward by the amount specified. Any timers or tickers that fire during that time
@@ -92,8 +112,8 @@ func (m *Mock) Forward(d time.Duration) {
 	m.mu.Lock()
 	t := m.now.Add(d)
 	m.now = t
-	m.tick(t)
 	m.mu.Unlock()
+	m.tick(t)
 	sched()
 }
 
@@ -102,20 +122,33 @@ func (m *Mock) Forward(d time.Duration) {
 func (m *Mock) Set(t time.Time) {
 	m.mu.Lock()
 	m.now = t
-	m.tick(t)
 	m.mu.Unlock()
+	m.tick(t)
 	sched()
 }
 
 // tick sends an event to all tickers and timers informing them that time has changed.
-// tick is not thread-safe and Mock should be locked before calling this.
 func (m *Mock) tick(t time.Time) {
-	for _, ti := range m.tickers {
-		ti.changed <- t
+	for m.tickNext(t) {
 	}
-	for _, ti := range m.timers {
-		ti.changed <- t
+}
+
+// tickNext executes the next Timer or Ticker in the queue
+func (m *Mock) tickNext(t time.Time) bool {
+	m.mu.Lock()
+	sort.Sort(m)
+	if len(m.timers) == 0 {
+		m.mu.Unlock()
+		return false
 	}
+	n := m.timers[0]
+	if n.NextExecution().After(t) {
+		m.mu.Unlock()
+		return false
+	}
+	m.mu.Unlock()
+	n.Execute(t)
+	return true
 }
 
 // Now returns the current internal time as either set by Set() or forwarded by Forward().
@@ -136,7 +169,6 @@ func (m *Mock) After(d time.Duration) <-chan time.Time {
 func (m *Mock) AfterFunc(d time.Duration, fn func()) Timer {
 	t := m.fakeTimer(d)
 	t.fn = fn
-	go t.tick()
 	sched()
 	return t
 }
@@ -156,17 +188,11 @@ func (m *Mock) Sleep(d time.Duration) {
 // time with a period specified by the duration argument.
 func (m *Mock) NewTicker(d time.Duration) Ticker {
 	t := fakeTicker{}
-	t.ch = make(chan time.Time)
-	// Set stop channel size to 1 so stopping a ticker doesn't block if it isn't read
-	t.stop = make(chan struct{}, 1)
-	t.changed = make(chan time.Time)
+	t.ch = make(chan time.Time, 1)
 	t.clock = m
 	t.d = d
-	m.mu.Lock()
-	m.tickers = append(m.tickers, &t)
-	m.mu.Unlock()
-	go t.tick()
-	sched()
+	t.next = m.Now().Add(d)
+	m.addTimer(&t)
 	return &t
 }
 
@@ -174,25 +200,42 @@ func (m *Mock) NewTicker(d time.Duration) Ticker {
 // the current time on its channel after at least duration d.
 func (m *Mock) NewTimer(d time.Duration) Timer {
 	t := m.fakeTimer(d)
-	t.ch = make(chan time.Time)
-	go t.tick()
-	sched()
+	t.ch = make(chan time.Time, 1)
 	return t
 }
 
+// fakeTimer returns a fakeTimer object with some standard setup
 func (m *Mock) fakeTimer(d time.Duration) *fakeTimer {
 	t := fakeTimer{}
-	// Set this to nil expressively to show that this timer will not do anything
+	// Set this to nil expressively to show that this Timer will not do anything
 	t.ch = nil
 	t.fn = nil
 	t.due = m.Now().Add(d)
 	t.clock = m
-	t.changed = make(chan time.Time)
 
-	m.mu.Lock()
-	m.timers = append(m.timers, &t)
-	m.mu.Unlock()
+	m.addTimer(&t)
 	return &t
+}
+
+// removeTimer removes a given Executer from the list of timers
+func (m *Mock) removeTimer(t Executer) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, ti := range m.timers {
+		if t == ti {
+			m.timers[i] = m.timers[len(m.timers)-1]
+			m.timers[len(m.timers)-1] = nil
+			m.timers = m.timers[:len(m.timers)-1]
+			return
+		}
+	}
+}
+
+// addTimer adds an Executer to the list of timers
+func (m *Mock) addTimer(t Executer) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.timers = append(m.timers, t)
 }
 
 // sched calls the go scheduler. Implementation might change to time.Sleep(time.Millisecond).

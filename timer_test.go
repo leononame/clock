@@ -84,6 +84,7 @@ func TestFakeTimer_Reset(t *testing.T) {
 		assert.Equal(t, test.count1, atomic.LoadInt32(&executed))
 		assert.Equal(t, test.stopped, timer.Reset(time.Minute))
 		clock.Forward(test.duration2)
+		time.Sleep(time.Millisecond * 10)
 		assert.Equal(t, test.count2, atomic.LoadInt32(&executed))
 	}
 }
