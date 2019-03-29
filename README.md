@@ -1,4 +1,4 @@
-# clock  [![GoDoc](https://godoc.org/github.com/leononame/clock?status.svg)](https://godoc.org/github.com/leononame/clock)
+# clock  [![GoDoc](https://godoc.org/github.com/leononame/clock?status.svg)](https://godoc.org/github.com/leononame/clock) [![Build Status](https://cloud.drone.io/api/badges/leononame/clock/status.svg)](https://cloud.drone.io/leononame/clock) [![codecov](https://codecov.io/gh/leononame/clock/branch/master/graph/badge.svg)](https://codecov.io/gh/leononame/clock)
 
 Clock is a library for mocking the time package in go. It supports mocking time.Timer and time.Ticker for testing purposes.
 
