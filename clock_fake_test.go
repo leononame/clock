@@ -31,6 +31,7 @@ func TestMock_RunUntilDone(t *testing.T) {
 	go incUponReceive(c.NewTicker(time.Second).Chan(), &fired)
 	go incUponReceive(c.NewTimer(time.Minute).Chan(), &fired)
 	before := c.Now()
+	sched()
 	c.RunUntilDone()
 	time.Sleep(time.Millisecond * 100)
 	assert.Equal(t, time.Minute, c.Since(before))
