@@ -33,9 +33,8 @@ func TestMock_RunUntilDone(t *testing.T) {
 	before := c.Now()
 	sched()
 	c.RunUntilDone()
-	time.Sleep(time.Millisecond * 100)
 	assert.Equal(t, time.Minute, c.Since(before))
-	assert.Equal(t, int32(61), fired)
+	assert.Equal(t, int32(61), atomic.LoadInt32(&fired))
 }
 
 func TestMock_Since(t *testing.T) {

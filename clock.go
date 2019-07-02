@@ -3,7 +3,6 @@
 package clock
 
 import (
-	"runtime"
 	"sort"
 	"sync"
 	"time"
@@ -216,7 +215,10 @@ func (m *Mock) NewTicker(d time.Duration) Ticker {
 // the current time on its channel after at least duration d.
 func (m *Mock) NewTimer(d time.Duration) Timer {
 	t := m.fakeTimer(d)
+	// Make sure the channel is locked. It might be read on Execute before we even assign it
+	m.mu.Lock()
 	t.ch = make(chan time.Time, 1)
+	m.mu.Unlock()
 	return t
 }
 
@@ -254,7 +256,11 @@ func (m *Mock) addTimer(t Executer) {
 	m.timers = append(m.timers, t)
 }
 
-// sched calls the go scheduler. Implementation might change to time.Sleep(time.Millisecond).
+// sched suspends the current goroutine.
+//
+// runtime.Gosched() was previously used, but runtime.Gosched() calls the scheduler without suspending the calling function.
+// This might result in us continuing directly - however, sched() is used to make sure the Timers and Tickers have time
+// to fire. Now we suspend the goroutine with time.Sleep() to make sure the other goroutines get their turn.
 func sched() {
-	runtime.Gosched()
+	time.Sleep(1 * time.Millisecond)
 }
